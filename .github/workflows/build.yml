@@ -43,7 +43,7 @@ jobs:
           EOF
           cat > app/src/main/AndroidManifest.xml <<'EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-            <application android:label="Расписание" android:icon="@android:drawable/ic_menu_my_calendar" android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar">
+            <application android:label="Расписание" android:icon="@android:drawable/ic_menu_my_calendar" android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
               <activity android:name=".MainActivity" android:exported="true">
                 <intent-filter>
                   <action android:name="android.intent.action.MAIN"/>
@@ -231,82 +231,274 @@ jobs:
           package ru.lessons;
           import android.app.Activity;
           import android.app.AlertDialog;
+          import android.content.Context;
+          import android.graphics.Canvas;
+          import android.graphics.Paint;
+          import android.graphics.RadialGradient;
+          import android.graphics.Shader;
+          import android.graphics.Typeface;
+          import android.graphics.drawable.GradientDrawable;
           import android.os.Bundle;
+          import android.os.Handler;
+          import android.os.Looper;
           import android.text.InputType;
-          import android.widget.Button;
+          import android.view.Gravity;
+          import android.view.View;
           import android.widget.EditText;
+          import android.widget.FrameLayout;
           import android.widget.LinearLayout;
           import android.widget.ScrollView;
           import android.widget.TextView;
           import android.widget.Toast;
+          import java.text.SimpleDateFormat;
           import java.util.Arrays;
+          import java.util.Calendar;
+          import java.util.Date;
           import java.util.List;
           import java.util.Locale;
+          import java.util.Random;
           import java.util.regex.Matcher;
           import java.util.regex.Pattern;
           public class MainActivity extends Activity {
+            static final int YEL = 0xFFFFD43B, CARD = 0xFF17171A, GREY = 0xFF9A9AA0;
+            static final String[] KEY = {"матем|алгебр|геометр","русск|письм","литер|чтени","англ|немец|франц|язык","физик","хим","биол|окруж","истор","геогр","информ","физкульт|физ-ра|физра","музык","изо|рисов|худож","технолог|труд","общест|прав","астроном|космос"};
+            static final String[] EMO = {"📐","✏️","📚","🌍","⚡","🧪","🧬","🏛️","🗺️","💻","⚽","🎵","🎨","🔧","⚖️","🔭"};
+            static final String[] PH = {"Ты справишься 💪","Мозг на максимуме 🧠","Почти дошли 🚀","Держим темп 🔥"};
+            static final String[] JOKES = {"Учиться — это круто 😎","Ты красавчик 💛","Пять по всем предметам! ⭐","Перемена — святое дело ☕","Главное — не забыть тетрадь 📓"};
             int sel;
-            LinearLayout list, tabs;
+            LinearLayout tabs, list, hero;
+            TextView greet, title;
+            Handler hd = new Handler(Looper.getMainLooper());
+            Runnable tick = new Runnable() {
+              @Override
+              public void run() { heroDraw(); hd.postDelayed(this, 30000); }
+            };
+            // мягкое свечение на фоне
+            static class Glow extends View {
+              Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+              Glow(Context c) { super(c); }
+              void blob(Canvas cv, float x, float y, float r, int col) {
+                p.setShader(new RadialGradient(x, y, r, col, col & 0x00FFFFFF, Shader.TileMode.CLAMP));
+                cv.drawCircle(x, y, r, p);
+              }
+              @Override
+              protected void onDraw(Canvas cv) {
+                cv.drawColor(0xFF050507);
+                int w = getWidth(), h = getHeight();
+                blob(cv, w * 0.95f, h * 0.04f, w * 0.9f, 0x55FFD43B);
+                blob(cv, 0f, h * 0.92f, w * 0.9f, 0x447B5CFF);
+              }
+            }
+            int dp(int v) { return (int) (v * getResources().getDisplayMetrics().density); }
+            GradientDrawable rr(int color, int r) {
+              GradientDrawable g = new GradientDrawable();
+              g.setColor(color);
+              g.setCornerRadius(dp(r));
+              return g;
+            }
+            TextView tv(String t, int sp, int color, boolean bold) {
+              TextView v = new TextView(this);
+              v.setText(t);
+              v.setTextSize(sp);
+              v.setTextColor(color);
+              if (bold) v.setTypeface(Typeface.DEFAULT_BOLD);
+              return v;
+            }
+            LinearLayout.LayoutParams lp(int l, int t, int r, int b) {
+              LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2);
+              p.setMargins(dp(l), dp(t), dp(r), dp(b));
+              return p;
+            }
+            static String cap(String s) { return s.isEmpty() ? s : s.substring(0, 1).toUpperCase() + s.substring(1); }
+            static String emo(String n) {
+              n = n.toLowerCase();
+              for (int i = 0; i < KEY.length; i++)
+                for (String k : KEY[i].split("\\|")) if (n.contains(k)) return EMO[i];
+              return "📘";
+            }
+            View bar(float f, int track, int fill) {
+              LinearLayout b = new LinearLayout(this);
+              b.setBackground(rr(track, 4));
+              float c = Math.max(0.03f, Math.min(1f, f));
+              View a = new View(this);
+              a.setBackground(rr(fill, 4));
+              b.addView(a, new LinearLayout.LayoutParams(0, dp(8), c));
+              b.addView(new View(this), new LinearLayout.LayoutParams(0, dp(8), 1f - c));
+              return b;
+            }
             @Override
             protected void onCreate(Bundle b) {
               super.onCreate(b);
+              getWindow().setStatusBarColor(0xFF050507);
+              getWindow().setNavigationBarColor(0xFF050507);
               sel = Widget.today();
-              int pd = (int) (16 * getResources().getDisplayMetrics().density);
-              LinearLayout root = new LinearLayout(this);
-              root.setOrientation(LinearLayout.VERTICAL);
-              root.setPadding(pd, pd, pd, pd);
-              TextView h = new TextView(this);
-              h.setText("Расписание");
-              h.setTextSize(28);
-              h.setPadding(0, 0, 0, pd);
-              root.addView(h);
-              tabs = new LinearLayout(this);
-              root.addView(tabs);
+              FrameLayout root = new FrameLayout(this);
+              root.addView(new Glow(this), new FrameLayout.LayoutParams(-1, -1));
               ScrollView sv = new ScrollView(this);
+              sv.setVerticalScrollBarEnabled(false);
+              LinearLayout col = new LinearLayout(this);
+              col.setOrientation(LinearLayout.VERTICAL);
+              col.setPadding(dp(18), dp(20), dp(18), dp(110));
+              greet = tv("", 14, GREY, false);
+              title = tv("", 30, 0xFFFFFFFF, true);
+              title.setOnClickListener(v -> Toast.makeText(this, JOKES[new Random().nextInt(JOKES.length)], Toast.LENGTH_SHORT).show());
+              hero = new LinearLayout(this);
+              hero.setOrientation(LinearLayout.VERTICAL);
+              tabs = new LinearLayout(this);
               list = new LinearLayout(this);
               list.setOrientation(LinearLayout.VERTICAL);
-              sv.addView(list);
-              root.addView(sv, new LinearLayout.LayoutParams(-1, 0, 1f));
-              Button add = new Button(this);
-              add.setText("+ Добавить урок");
-              add.setOnClickListener(v -> edit(null));
-              root.addView(add);
+              col.addView(greet);
+              col.addView(title);
+              col.addView(hero, lp(0, 18, 0, 14));
+              col.addView(tabs, lp(0, 0, 0, 14));
+              col.addView(list);
+              sv.addView(col);
+              root.addView(sv, new FrameLayout.LayoutParams(-1, -1));
+              TextView fab = tv("+", 32, 0xFF000000, true);
+              fab.setGravity(Gravity.CENTER);
+              fab.setBackground(rr(YEL, 30));
+              fab.setElevation(dp(8));
+              fab.setOnClickListener(v -> edit(null));
+              FrameLayout.LayoutParams fp = new FrameLayout.LayoutParams(dp(60), dp(60), Gravity.BOTTOM | Gravity.END);
+              fp.setMargins(0, 0, dp(20), dp(24));
+              root.addView(fab, fp);
               setContentView(root);
+            }
+            @Override
+            protected void onResume() {
+              super.onResume();
               draw();
+              hd.removeCallbacks(tick);
+              hd.postDelayed(tick, 30000);
+            }
+            @Override
+            protected void onPause() {
+              super.onPause();
+              hd.removeCallbacks(tick);
+            }
+            void card(boolean hl, String label, String big, String sub, String foot, float prog) {
+              int fg = hl ? 0xFF000000 : 0xFFFFFFFF, dim = hl ? 0xB3000000 : GREY;
+              LinearLayout c = new LinearLayout(this);
+              c.setOrientation(LinearLayout.VERTICAL);
+              c.setPadding(dp(20), dp(18), dp(20), dp(18));
+              GradientDrawable g = hl ? new GradientDrawable(GradientDrawable.Orientation.TL_BR, new int[]{0xFFFFE066, 0xFFFFB300}) : rr(CARD, 28);
+              g.setCornerRadius(dp(28));
+              if (!hl) g.setStroke(dp(1), 0x55FFD43B);
+              c.setBackground(g);
+              c.addView(tv(label, 13, dim, false));
+              TextView b = tv(big, 26, fg, true);
+              b.setPadding(0, dp(6), 0, dp(2));
+              c.addView(b);
+              if (!sub.isEmpty()) c.addView(tv(sub, 15, dim, false));
+              if (prog >= 0) c.addView(bar(prog, hl ? 0x33000000 : 0xFF2A2A30, hl ? 0xFF000000 : YEL), lp(0, 14, 0, 0));
+              if (!foot.isEmpty()) {
+                TextView f = tv(foot, 13, dim, false);
+                f.setPadding(0, dp(12), 0, 0);
+                c.addView(f);
+              }
+              hero.addView(c, new LinearLayout.LayoutParams(-1, -2));
+            }
+            void heroDraw() {
+              hero.removeAllViews();
+              Calendar n = Calendar.getInstance();
+              int now = n.get(Calendar.HOUR_OF_DAY) * 60 + n.get(Calendar.MINUTE), d = Widget.today(), pe = -1, nd = 0;
+              String[] cur = null, nxt = null;
+              List<String[]> all = Widget.load(this);
+              boolean any = false;
+              for (String[] p : all) {
+                if (!p[0].equals(String.valueOf(d))) continue;
+                any = true;
+                int s0 = Widget.mm(p[1]), e0 = Widget.mm(p[2]);
+                if (s0 <= now && now < e0) cur = p;
+                if (e0 <= now) pe = Math.max(pe, e0);
+              }
+              for (int k = 0; k < 8 && nxt == null; k++) {
+                String ds = String.valueOf((d + k) % 7);
+                for (String[] p : all) {
+                  if (!p[0].equals(ds) || (k == 0 && Widget.mm(p[1]) <= now)) continue;
+                  nxt = p;
+                  nd = k;
+                  break;
+                }
+              }
+              String wh = nd == 0 ? "" : nd == 1 ? "завтра " : (nxt == null ? "" : Widget.SH[Integer.parseInt(nxt[0])] + " ");
+              String tail = nxt == null ? "" : "Дальше: " + emo(nxt[3]) + " " + nxt[3] + ", " + wh + nxt[1];
+              String ph = PH[(int) ((System.currentTimeMillis() / 1800000L) % PH.length)];
+              if (cur != null) {
+                int s0 = Widget.mm(cur[1]), e0 = Widget.mm(cur[2]);
+                card(true, "Идёт урок, осталось " + Widget.dur(e0 - now), emo(cur[3]) + " " + cur[3],
+                    cur[1] + " – " + cur[2] + (cur[4].isEmpty() ? "" : "  каб. " + cur[4]),
+                    ph + (tail.isEmpty() ? "" : "\n" + tail), (now - s0) / (float) (e0 - s0));
+              } else if (pe >= 0 && nxt != null && nd == 0) {
+                int ns = Widget.mm(nxt[1]);
+                card(false, "Перемена ☕  осталось " + Widget.dur(ns - now), "Отдохни немного", tail, "", (now - pe) / (float) (ns - pe));
+              } else if (nxt != null) {
+                card(false, nd == 0 ? "Скоро начнём 🚀" : any ? "На сегодня всё 🎉" : "Сегодня уроков нет 🌴",
+                    emo(nxt[3]) + " " + nxt[3], wh + nxt[1] + " – " + nxt[2] + (nxt[4].isEmpty() ? "" : "  каб. " + nxt[4]), "", -1f);
+              } else {
+                card(false, "Расписание пусто", "🌴 Пока пусто", "Нажми «+», чтобы добавить урок", "", -1f);
+              }
             }
             void draw() {
-              String[] sh = {"Пн","Вт","Ср","Чт","Пт","Сб","Вс"};
+              Calendar n = Calendar.getInstance();
+              int h = n.get(Calendar.HOUR_OF_DAY), now = h * 60 + n.get(Calendar.MINUTE), td = Widget.today();
+              greet.setText(h < 5 ? "Доброй ночи 🌙" : h < 12 ? "Доброе утро ☀️" : h < 18 ? "Добрый день 🌤️" : "Добрый вечер 🌙");
+              title.setText(cap(new SimpleDateFormat("EEEE, d MMMM", new Locale("ru")).format(new Date())));
+              heroDraw();
               tabs.removeAllViews();
+              String[] sh = {"Пн","Вт","Ср","Чт","Пт","Сб","Вс"};
               for (int i = 0; i < 7; i++) {
                 final int d = i;
-                Button t = new Button(this);
-                t.setText(sh[i]);
-                t.setAllCaps(false);
-                t.setTextSize(13);
-                t.setMinWidth(0);
-                t.setMinimumWidth(0);
-                t.setPadding(0, 0, 0, 0);
-                t.setTextColor(0xFF14213D);
-                t.setBackgroundColor(i == sel ? 0xFFFFD43B : 0xFFE9EDF2);
+                TextView t = tv(sh[i], 14, i == sel ? 0xFF000000 : i == td ? 0xFFFFFFFF : GREY, i == sel);
+                t.setGravity(Gravity.CENTER);
+                t.setPadding(0, dp(10), 0, dp(10));
+                GradientDrawable g = rr(i == sel ? YEL : CARD, 14);
+                if (i == td && i != sel) g.setStroke(dp(1), YEL);
+                t.setBackground(g);
                 t.setOnClickListener(v -> { sel = d; draw(); });
-                tabs.addView(t, new LinearLayout.LayoutParams(0, -2, 1f));
+                LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(0, -2, 1f);
+                tp.setMargins(dp(3), 0, dp(3), 0);
+                tabs.addView(t, tp);
               }
               list.removeAllViews();
-              int n = 0;
+              int k = 0;
               for (String[] p : Widget.load(this)) {
                 if (!p[0].equals(String.valueOf(sel))) continue;
-                n++;
-                TextView t = new TextView(this);
-                t.setText(p[1] + " – " + p[2] + "\n" + p[3] + (p[4].isEmpty() ? "" : "  (каб. " + p[4] + ")") + (p[5].isEmpty() ? "" : "\nЗадали: " + p[5]));
-                t.setTextSize(18);
-                t.setPadding(0, 24, 0, 24);
-                t.setOnClickListener(v -> edit(p));
-                list.addView(t);
+                int s0 = Widget.mm(p[1]), e0 = Widget.mm(p[2]);
+                boolean cu = sel == td && s0 <= now && now < e0, past = sel == td && e0 <= now;
+                LinearLayout r = new LinearLayout(this);
+                r.setGravity(Gravity.CENTER_VERTICAL);
+                r.setPadding(dp(14), dp(14), dp(14), dp(14));
+                GradientDrawable g = rr(cu ? 0xFF2A2410 : CARD, 20);
+                if (cu) g.setStroke(dp(2), YEL);
+                r.setBackground(g);
+                LinearLayout tm = new LinearLayout(this);
+                tm.setOrientation(LinearLayout.VERTICAL);
+                tm.addView(tv(p[1], 17, 0xFFFFFFFF, true));
+                tm.addView(tv(p[2], 13, GREY, false));
+                r.addView(tm, new LinearLayout.LayoutParams(dp(56), -2));
+                TextView em = tv(emo(p[3]), 22, 0xFFFFFFFF, false);
+                em.setGravity(Gravity.CENTER);
+                em.setBackground(rr(0xFF26262B, 22));
+                LinearLayout.LayoutParams ep = new LinearLayout.LayoutParams(dp(44), dp(44));
+                ep.setMargins(dp(4), 0, dp(12), 0);
+                r.addView(em, ep);
+                LinearLayout x = new LinearLayout(this);
+                x.setOrientation(LinearLayout.VERTICAL);
+                x.addView(tv(p[3], 17, 0xFFFFFFFF, true));
+                if (!p[4].isEmpty()) x.addView(tv("каб. " + p[4], 13, GREY, false));
+                if (!p[5].isEmpty()) x.addView(tv("📝 " + p[5], 13, 0xFFE6C84A, false));
+                r.addView(x, new LinearLayout.LayoutParams(0, -2, 1f));
+                r.setOnClickListener(v -> edit(p));
+                list.addView(r, lp(0, 0, 0, 10));
+                r.setAlpha(0f);
+                r.setTranslationY(dp(24));
+                r.animate().alpha(past ? 0.45f : 1f).translationY(0f).setStartDelay(k++ * 50L).setDuration(260).start();
               }
-              if (n == 0) {
-                TextView e = new TextView(this);
-                e.setText(Widget.DAYS[sel] + ": уроков нет");
-                e.setPadding(0, 40, 0, 0);
+              if (k == 0) {
+                TextView e = tv("🌴\nУроков нет, отдыхай!", 16, GREY, false);
+                e.setGravity(Gravity.CENTER);
+                e.setPadding(0, dp(40), 0, 0);
                 list.addView(e);
               }
             }
@@ -369,4 +561,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: gh release create "v${{ github.run_number }}" app/build/outputs/apk/debug/app-debug.apk --title "Расписание v${{ github.run_number }}" --notes "Скачай app-debug.apk и установи"
+        run: gh release create "v${{ github.run_number }}" app/build/outputs/apk/debug/app-debug.apk --title "Расписание v${{ github.run_number }}" --notes "Скачай app-debug.apk и установи" 
