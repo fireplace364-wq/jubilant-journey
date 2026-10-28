@@ -17,6 +17,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.7"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: debug-keystore-v1
       - name: Write project
         run: |
           mkdir -p app/src/main/java/ru/lessons app/src/main/res/layout app/src/main/res/xml app/src/main/res/drawable
@@ -54,12 +58,12 @@ jobs:
           </manifest>
           EOF
           cat > app/src/main/res/xml/info.xml <<'EOF'
-          <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android" android:minWidth="250dp" android:minHeight="110dp" android:updatePeriodMillis="1800000" android:initialLayout="@layout/widget" android:resizeMode="horizontal|vertical" android:widgetCategory="home_screen"/>
+          <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android" android:minWidth="250dp" android:minHeight="180dp" android:minResizeHeight="110dp" android:updatePeriodMillis="1800000" android:initialLayout="@layout/widget" android:resizeMode="horizontal|vertical" android:widgetCategory="home_screen"/>
           EOF
           cat > app/src/main/res/layout/widget.xml <<'EOF'
           <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/root" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:padding="14dp" android:background="@drawable/bg">
             <TextView android:id="@+id/h" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="#14213D" android:textSize="16sp" android:textStyle="bold"/>
-            <TextView android:id="@+id/b" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:textColor="#14213D" android:textSize="14sp" android:maxLines="8" android:ellipsize="end"/>
+            <TextView android:id="@+id/b" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:textColor="#14213D" android:textSize="14sp" android:maxLines="12" android:ellipsize="end"/>
           </LinearLayout>
           EOF
           cat > app/src/main/res/drawable/bg.xml <<'EOF'
@@ -67,6 +71,7 @@ jobs:
           EOF
           cat > app/src/main/java/ru/lessons/Widget.java <<'EOF'
           package ru.lessons;
+          import android.app.AlarmManager;
           import android.app.PendingIntent;
           import android.appwidget.AppWidgetManager;
           import android.appwidget.AppWidgetProvider;
@@ -87,13 +92,15 @@ jobs:
           import java.util.Locale;
           public class Widget extends AppWidgetProvider {
             static final String[] DAYS = {"Понедельник","Вторник","Среда","Четверг","Пятница","Суббота","Воскресенье"};
-            // урок: {день 0-6, начало, конец, предмет, кабинет}
+            static final String[] SH = {"Пн","Вт","Ср","Чт","Пт","Сб","Вс"};
+            // урок: {день 0-6, начало, конец, предмет, кабинет, что задали}
             static List<String[]> load(Context c) {
               List<String[]> r = new ArrayList<>();
               String s = c.getSharedPreferences("s", 0).getString("d", "");
               for (String line : s.split("\n")) {
                 String[] p = line.split("\\|", -1);
-                if (p.length == 5) r.add(p);
+                if (p.length == 5) p = new String[]{p[0], p[1], p[2], p[3], p[4], ""};
+                if (p.length == 6) r.add(p);
               }
               Collections.sort(r, (a, b) -> a[0].equals(b[0]) ? a[1].compareTo(b[1]) : a[0].compareTo(b[0]));
               return r;
@@ -106,24 +113,52 @@ jobs:
               new Widget().onUpdate(c, m, m.getAppWidgetIds(new ComponentName(c, Widget.class)));
             }
             static int today() { return (Calendar.getInstance().get(Calendar.DAY_OF_WEEK) + 5) % 7; }
+            static void block(SpannableStringBuilder sb, String label, String when, String[] p, boolean hl) {
+              if (sb.length() > 0) sb.append("\n\n");
+              int a = sb.length();
+              sb.append(label);
+              sb.setSpan(new StyleSpan(Typeface.BOLD), a, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+              int b = sb.length();
+              sb.append(p[3]);
+              if (hl) sb.setSpan(new BackgroundColorSpan(0xFFFFD43B), b, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+              sb.append(when);
+              if (!p[4].isEmpty()) sb.append(", каб. ").append(p[4]);
+              if (!p[5].isEmpty()) sb.append("\nЗадали: ").append(p[5]);
+            }
             @Override
             public void onUpdate(Context c, AppWidgetManager m, int[] ids) {
               Calendar n = Calendar.getInstance();
               String now = String.format(Locale.US, "%02d:%02d", n.get(Calendar.HOUR_OF_DAY), n.get(Calendar.MINUTE));
               int d = today();
-              SpannableStringBuilder sb = new SpannableStringBuilder();
-              for (String[] p : load(c)) {
-                if (!p[0].equals(String.valueOf(d))) continue;
-                int st = sb.length();
-                sb.append(p[1]).append("  ").append(p[3]);
-                if (!p[4].isEmpty()) sb.append(" (").append(p[4]).append(")");
-                if (p[1].compareTo(now) <= 0 && now.compareTo(p[2]) < 0) {
-                  sb.setSpan(new StyleSpan(Typeface.BOLD), st, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                  sb.setSpan(new BackgroundColorSpan(0xFFFFD43B), st, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+              List<String[]> all = load(c);
+              String[] cur = null, nxt = null;
+              int nd = 0;
+              for (String[] p : all)
+                if (p[0].equals(String.valueOf(d)) && p[1].compareTo(now) <= 0 && now.compareTo(p[2]) < 0) cur = p;
+              for (int k = 0; k < 8 && nxt == null; k++) {
+                String ds = String.valueOf((d + k) % 7);
+                for (String[] p : all) {
+                  if (!p[0].equals(ds) || (k == 0 && p[1].compareTo(now) <= 0)) continue;
+                  nxt = p;
+                  nd = k;
+                  break;
                 }
-                sb.append("\n");
               }
-              if (sb.length() == 0) sb.append("Уроков нет");
+              SpannableStringBuilder sb = new SpannableStringBuilder();
+              if (all.isEmpty()) {
+                sb.append("Уроков пока нет. Добавь их в приложении.");
+              } else {
+                if (cur != null) {
+                  block(sb, "Сейчас: ", ", до " + cur[2], cur, true);
+                } else {
+                  sb.append("Сейчас: нет урока");
+                  sb.setSpan(new StyleSpan(Typeface.BOLD), 0, 7, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                }
+                if (nxt != null) {
+                  String w = nd == 0 ? ", в " + nxt[1] : nd == 1 ? ", завтра в " + nxt[1] : ", " + SH[Integer.parseInt(nxt[0])] + " в " + nxt[1];
+                  block(sb, "Дальше: ", w, nxt, false);
+                }
+              }
               PendingIntent pi = PendingIntent.getActivity(c, 0, new Intent(c, MainActivity.class), PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
               for (int id : ids) {
                 RemoteViews v = new RemoteViews(c.getPackageName(), R.layout.widget);
@@ -132,6 +167,34 @@ jobs:
                 v.setOnClickPendingIntent(R.id.root, pi);
                 m.updateAppWidget(id, v);
               }
+              if (ids.length > 0) again(c, all, d, now, ids);
+            }
+            // следующее обновление: ближайшее начало или конец урока (иначе полночь)
+            static void again(Context c, List<String[]> all, int d, String now, int[] ids) {
+              String best = null;
+              for (String[] p : all) {
+                if (!p[0].equals(String.valueOf(d))) continue;
+                for (String tm : new String[]{p[1], p[2]})
+                  if (tm.compareTo(now) > 0 && (best == null || tm.compareTo(best) < 0)) best = tm;
+              }
+              Calendar at = Calendar.getInstance();
+              if (best != null) {
+                at.set(Calendar.HOUR_OF_DAY, Integer.parseInt(best.substring(0, 2)));
+                at.set(Calendar.MINUTE, Integer.parseInt(best.substring(3, 5)));
+              } else {
+                at.add(Calendar.DAY_OF_YEAR, 1);
+                at.set(Calendar.HOUR_OF_DAY, 0);
+                at.set(Calendar.MINUTE, 1);
+              }
+              at.set(Calendar.SECOND, 5);
+              Intent i = new Intent(c, Widget.class).setAction(AppWidgetManager.ACTION_APPWIDGET_UPDATE).putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids);
+              PendingIntent pi = PendingIntent.getBroadcast(c, 1, i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+              ((AlarmManager) c.getSystemService(Context.ALARM_SERVICE)).set(AlarmManager.RTC, at.getTimeInMillis(), pi);
+            }
+            @Override
+            public void onDisabled(Context c) {
+              Intent i = new Intent(c, Widget.class).setAction(AppWidgetManager.ACTION_APPWIDGET_UPDATE);
+              ((AlarmManager) c.getSystemService(Context.ALARM_SERVICE)).cancel(PendingIntent.getBroadcast(c, 1, i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
             }
           }
           EOF
@@ -205,7 +268,7 @@ jobs:
                 if (!p[0].equals(String.valueOf(sel))) continue;
                 n++;
                 TextView t = new TextView(this);
-                t.setText(p[1] + " – " + p[2] + "\n" + p[3] + (p[4].isEmpty() ? "" : "  (каб. " + p[4] + ")"));
+                t.setText(p[1] + " – " + p[2] + "\n" + p[3] + (p[4].isEmpty() ? "" : "  (каб. " + p[4] + ")") + (p[5].isEmpty() ? "" : "\nЗадали: " + p[5]));
                 t.setTextSize(18);
                 t.setPadding(0, 24, 0, 24);
                 t.setOnClickListener(v -> edit(p));
@@ -220,7 +283,7 @@ jobs:
             }
             EditText field(LinearLayout p, String hint, String v, int type) {
               EditText t = new EditText(this);
-              t.setSingleLine(true);
+              
               t.setInputType(type);
               t.setHint(hint);
               t.setText(v);
@@ -242,7 +305,10 @@ jobs:
               EditText s = field(f, "Начало, например 08:30", x == null ? "08:30" : x[1], InputType.TYPE_CLASS_DATETIME);
               EditText e = field(f, "Конец, например 09:15", x == null ? "09:15" : x[2], InputType.TYPE_CLASS_DATETIME);
               EditText r = field(f, "Кабинет", x == null ? "" : x[4], InputType.TYPE_CLASS_TEXT);
-              AlertDialog.Builder a = new AlertDialog.Builder(this).setTitle(x == null ? "Новый урок" : "Изменить урок").setView(f);
+              EditText hw = field(f, "Что задали (необязательно)", x == null ? "" : x[5], InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+              ScrollView sc = new ScrollView(this);
+              sc.addView(f);
+              AlertDialog.Builder a = new AlertDialog.Builder(this).setTitle(x == null ? "Новый урок" : "Изменить урок").setView(sc);
               a.setPositiveButton("Сохранить", (dlg, w) -> {
                 String name = clean(n.getText().toString());
                 String st = fix(s.getText().toString());
@@ -253,7 +319,7 @@ jobs:
                 }
                 List<String[]> l = Widget.load(this);
                 if (x != null) l.removeIf(q -> Arrays.equals(q, x));
-                l.add(new String[]{x == null ? String.valueOf(sel) : x[0], st, en, name, clean(r.getText().toString())});
+                l.add(new String[]{x == null ? String.valueOf(sel) : x[0], st, en, name, clean(r.getText().toString()), clean(hw.getText().toString())});
                 Widget.save(this, l);
                 draw();
               });
