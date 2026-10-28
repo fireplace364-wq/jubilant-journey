@@ -1,343 +1,373 @@
-name: Build APK
+
+name: Build Black Schedule APK
+
 on:
-  push:
-    branches: ["**"]
   workflow_dispatch:
+  push:
+
 permissions:
-  contents: write
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: '17'
+
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.7"
-      - uses: actions/cache@v4
-        with:
-          path: ~/.android/debug.keystore
-          key: debug-keystore-v1
-      - name: Write project
+          gradle-version: '8.7'
+
+      - name: Create Android project
+        shell: bash
         run: |
-          mkdir -p app/src/main/java/ru/lessons app/src/main/res/layout app/src/main/res/xml app/src/main/res/drawable
-          cat > settings.gradle.kts <<'EOF'
-          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
-          dependencyResolutionManagement { repositories { google(); mavenCentral() } }
-          rootProject.name = "Raspisanie"
+          mkdir -p app/src/main/java/com/school/schedule
+          mkdir -p app/src/main/res/layout
+          mkdir -p app/src/main/res/xml
+          mkdir -p app/src/main/res/drawable
+
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "BlackSchedule"
           include(":app")
           EOF
-          cat > build.gradle.kts <<'EOF'
-          plugins { id("com.android.application") version "8.5.2" apply false }
-          EOF
-          cat > app/build.gradle.kts <<'EOF'
-          plugins { id("com.android.application") }
-          android {
-            namespace = "ru.lessons"
-            compileSdk = 34
-            defaultConfig { applicationId = "ru.lessons"; minSdk = 24; targetSdk = 34; versionCode = 1; versionName = "1.0" }
+
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.5.2' apply false
           }
           EOF
+
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+          android {
+              namespace 'com.school.schedule'
+              compileSdk 35
+
+              defaultConfig {
+                  applicationId 'com.school.schedule'
+                  minSdk 23
+                  targetSdk 28
+                  versionCode 1
+                  versionName '1.0'
+              }
+          }
+          EOF
+
           cat > app/src/main/AndroidManifest.xml <<'EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-            <application android:label="Расписание" android:icon="@android:drawable/ic_menu_my_calendar" android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar">
-              <activity android:name=".MainActivity" android:exported="true">
-                <intent-filter>
-                  <action android:name="android.intent.action.MAIN"/>
-                  <category android:name="android.intent.category.LAUNCHER"/>
-                </intent-filter>
-              </activity>
-              <receiver android:name=".Widget" android:exported="true">
-                <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
-                <meta-data android:name="android.appwidget.provider" android:resource="@xml/info"/>
-              </receiver>
-            </application>
+              <application
+                  android:theme="@android:style/Theme.Material.NoActionBar"
+                  android:label="Моё расписание"
+                  android:usesCleartextTraffic="false">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+
+                  <receiver
+                      android:name=".ScheduleWidget"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+                      </intent-filter>
+                      <meta-data
+                          android:name="android.appwidget.provider"
+                          android:resource="@xml/widget_info"/>
+                  </receiver>
+              </application>
           </manifest>
           EOF
-          cat > app/src/main/res/xml/info.xml <<'EOF'
-          <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android" android:minWidth="250dp" android:minHeight="180dp" android:minResizeHeight="110dp" android:updatePeriodMillis="1800000" android:initialLayout="@layout/widget" android:resizeMode="horizontal|vertical" android:widgetCategory="home_screen"/>
+
+          cat > app/src/main/res/xml/widget_info.xml <<'EOF'
+          <appwidget-provider
+              xmlns:android="http://schemas.android.com/apk/res/android"
+              android:minWidth="180dp"
+              android:minHeight="110dp"
+              android:initialLayout="@layout/widget"
+              android:resizeMode="horizontal|vertical"
+              android:widgetCategory="home_screen"
+              android:updatePeriodMillis="1800000"
+              android:description="@string/widget_description"/>
           EOF
+
+          mkdir -p app/src/main/res/values
+          cat > app/src/main/res/values/strings.xml <<'EOF'
+          <resources>
+              <string name="widget_description">Текущий и следующий урок</string>
+          </resources>
+          EOF
+
           cat > app/src/main/res/layout/widget.xml <<'EOF'
-          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/root" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:padding="14dp" android:background="@drawable/bg">
-            <TextView android:id="@+id/h" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="#14213D" android:textSize="16sp" android:textStyle="bold"/>
-            <TextView android:id="@+id/b" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:textColor="#14213D" android:textSize="14sp" android:maxLines="12" android:ellipsize="end"/>
+          <LinearLayout
+              xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:orientation="vertical"
+              android:padding="12dp"
+              android:background="#080808">
+
+              <TextView
+                  android:id="@+id/day"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:text="РАСПИСАНИЕ"
+                  android:textColor="#999999"
+                  android:textSize="11sp"/>
+
+              <TextView
+                  android:id="@+id/current"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:text="Сейчас: —"
+                  android:textColor="#FFFFFF"
+                  android:textStyle="bold"
+                  android:textSize="16sp"
+                  android:maxLines="1"
+                  android:ellipsize="end"
+                  android:layout_marginTop="5dp"/>
+
+              <TextView
+                  android:id="@+id/next"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:text="Далее: —"
+                  android:textColor="#DDDDDD"
+                  android:textSize="13sp"
+                  android:maxLines="1"
+                  android:ellipsize="end"
+                  android:layout_marginTop="4dp"/>
+
+              <TextView
+                  android:id="@+id/break_time"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:text="Перемена: —"
+                  android:textColor="#AAAAAA"
+                  android:textSize="12sp"
+                  android:layout_marginTop="3dp"/>
           </LinearLayout>
           EOF
-          cat > app/src/main/res/drawable/bg.xml <<'EOF'
-          <shape xmlns:android="http://schemas.android.com/apk/res/android"><solid android:color="#F2FFFFFF"/><corners android:radius="22dp"/></shape>
+
+          cat > app/src/main/java/com/school/schedule/ScheduleData.java <<'EOF'
+          package com.school.schedule;
+
+          import java.util.Calendar;
+          import java.util.Locale;
+
+          public class ScheduleData {
+              public static final String[][] DAYS = {
+                  {"Хим/био","Нем. язык","Бел. язык","Математика","Биология","ФК","ДПЮ"},
+                  {"Математика","Химия","Физика","Русский язык","История","Русский язык","Биология"},
+                  {"Биол/хим","Нем. язык","Русская лит.","Математика","Химия","ФК","Информатика"},
+                  {"Астрономия","Бел. язык","Обществоведение","Бел. лит.","Математика","ФК"},
+                  {"Хим/био","Хим/био","ФК","География","История","Физика"}
+              };
+
+              public static final String[] NAMES = {
+                  "Понедельник","Вторник","Среда","Четверг","Пятница"
+              };
+
+              public static final int[] START = new int[7];
+              public static final int[] END = new int[7];
+              public static final int[] BREAK = {15,10,15,15,10,10,0};
+
+              static {
+                  int t = 8 * 60 + 40;
+                  for (int i=0; i<7; i++) {
+                      START[i] = t;
+                      END[i] = t + 45;
+                      t = END[i] + BREAK[i];
+                  }
+              }
+
+              public static String time(int m) {
+                  return String.format(Locale.getDefault(), "%02d:%02d", m/60, m%60);
+              }
+
+              public static int today() {
+                  int d = Calendar.getInstance().get(Calendar.DAY_OF_WEEK);
+                  return d == Calendar.SUNDAY ? -1 : d - Calendar.MONDAY;
+              }
+
+              public static String status() {
+                  Calendar c = Calendar.getInstance();
+                  int now = c.get(Calendar.HOUR_OF_DAY)*60 + c.get(Calendar.MINUTE);
+                  int day = today();
+
+                  if (day < 0 || day > 4)
+                      return "Сегодня уроков нет";
+
+                  String[] subjects = DAYS[day];
+
+                  for (int i=0; i<7; i++) {
+                      if (now >= START[i] && now < END[i]) {
+                          String current = i < subjects.length ? subjects[i] : "Урок";
+                          String next = i+1 < subjects.length ? subjects[i+1] : null;
+                          return "Сейчас: " + current + " (" +
+                              time(START[i]) + "–" + time(END[i]) + ")\\n" +
+                              (next == null ? "Следующий урок: нет" :
+                              "Далее: " + next + " (" + time(START[i+1]) +
+                              "–" + time(END[i+1]) + ")") +
+                              "\\nПеремена после: " + BREAK[i] + " мин";
+                      }
+
+                      if (now >= END[i] && i < 6 && now < START[i+1]) {
+                          String next = i+1 < subjects.length ? subjects[i+1] : "Урок";
+                          return "Перемена: " + (START[i+1]-now) + " мин осталось\\n" +
+                              "Далее: " + next + " (" + time(START[i+1]) +
+                              "–" + time(END[i+1]) + ")";
+                      }
+                  }
+
+                  if (now < START[0]) return "Уроки ещё не начались\\nНачало: 08:40";
+                  return "Уроки на сегодня закончились";
+              }
+          }
           EOF
-          cat > app/src/main/java/ru/lessons/Widget.java <<'EOF'
-          package ru.lessons;
-          import android.app.AlarmManager;
-          import android.app.PendingIntent;
+
+          cat > app/src/main/java/com/school/schedule/ScheduleWidget.java <<'EOF'
+          package com.school.schedule;
+
           import android.appwidget.AppWidgetManager;
           import android.appwidget.AppWidgetProvider;
-          import android.content.ComponentName;
           import android.content.Context;
-          import android.content.Intent;
-          import android.graphics.Typeface;
-          import android.text.SpannableStringBuilder;
-          import android.text.Spanned;
-          import android.text.TextUtils;
-          import android.text.style.BackgroundColorSpan;
-          import android.text.style.StyleSpan;
           import android.widget.RemoteViews;
-          import java.util.ArrayList;
           import java.util.Calendar;
-          import java.util.Collections;
-          import java.util.List;
-          import java.util.Locale;
-          public class Widget extends AppWidgetProvider {
-            static final String[] DAYS = {"Понедельник","Вторник","Среда","Четверг","Пятница","Суббота","Воскресенье"};
-            static final String[] SH = {"Пн","Вт","Ср","Чт","Пт","Сб","Вс"};
-            // урок: {день 0-6, начало, конец, предмет, кабинет, что задали}
-            static List<String[]> load(Context c) {
-              List<String[]> r = new ArrayList<>();
-              String s = c.getSharedPreferences("s", 0).getString("d", "");
-              for (String line : s.split("\n")) {
-                String[] p = line.split("\\|", -1);
-                if (p.length == 5) p = new String[]{p[0], p[1], p[2], p[3], p[4], ""};
-                if (p.length == 6) r.add(p);
+
+          public class ScheduleWidget extends AppWidgetProvider {
+              @Override
+              public void onUpdate(Context context, AppWidgetManager manager, int[] ids) {
+                  int d = ScheduleData.today();
+                  String day = d >= 0 && d < 5
+                      ? ScheduleData.NAMES[d] : "Выходной";
+
+                  for (int id : ids) {
+                      RemoteViews v = new RemoteViews(context.getPackageName(), R.layout.widget);
+                      String[] lines = ScheduleData.status().split("\\n");
+                      v.setTextViewText(R.id.day, day.toUpperCase());
+                      v.setTextViewText(R.id.current, lines[0]);
+                      v.setTextViewText(R.id.next, lines.length > 1 ? lines[1] : "");
+                      v.setTextViewText(R.id.break_time,
+                          lines.length > 2 ? lines[2] : "Чёрная тема");
+                      manager.updateAppWidget(id, v);
+                  }
               }
-              Collections.sort(r, (a, b) -> a[0].equals(b[0]) ? a[1].compareTo(b[1]) : a[0].compareTo(b[0]));
-              return r;
-            }
-            static void save(Context c, List<String[]> l) {
-              StringBuilder sb = new StringBuilder();
-              for (String[] p : l) sb.append(TextUtils.join("|", p)).append("\n");
-              c.getSharedPreferences("s", 0).edit().putString("d", sb.toString()).apply();
-              AppWidgetManager m = AppWidgetManager.getInstance(c);
-              new Widget().onUpdate(c, m, m.getAppWidgetIds(new ComponentName(c, Widget.class)));
-            }
-            static int today() { return (Calendar.getInstance().get(Calendar.DAY_OF_WEEK) + 5) % 7; }
-            static void block(SpannableStringBuilder sb, String label, String when, String[] p, boolean hl) {
-              if (sb.length() > 0) sb.append("\n\n");
-              int a = sb.length();
-              sb.append(label);
-              sb.setSpan(new StyleSpan(Typeface.BOLD), a, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-              int b = sb.length();
-              sb.append(p[3]);
-              if (hl) sb.setSpan(new BackgroundColorSpan(0xFFFFD43B), b, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-              sb.append(when);
-              if (!p[4].isEmpty()) sb.append(", каб. ").append(p[4]);
-              if (!p[5].isEmpty()) sb.append("\nЗадали: ").append(p[5]);
-            }
-            @Override
-            public void onUpdate(Context c, AppWidgetManager m, int[] ids) {
-              Calendar n = Calendar.getInstance();
-              String now = String.format(Locale.US, "%02d:%02d", n.get(Calendar.HOUR_OF_DAY), n.get(Calendar.MINUTE));
-              int d = today();
-              List<String[]> all = load(c);
-              String[] cur = null, nxt = null;
-              int nd = 0;
-              for (String[] p : all)
-                if (p[0].equals(String.valueOf(d)) && p[1].compareTo(now) <= 0 && now.compareTo(p[2]) < 0) cur = p;
-              for (int k = 0; k < 8 && nxt == null; k++) {
-                String ds = String.valueOf((d + k) % 7);
-                for (String[] p : all) {
-                  if (!p[0].equals(ds) || (k == 0 && p[1].compareTo(now) <= 0)) continue;
-                  nxt = p;
-                  nd = k;
-                  break;
-                }
+
+              @Override
+              public void onReceive(Context context, android.content.Intent intent) {
+                  super.onReceive(context, intent);
+                  if (AppWidgetManager.ACTION_APPWIDGET_UPDATE.equals(intent.getAction())) {
+                      AppWidgetManager manager = AppWidgetManager.getInstance(context);
+                      onUpdate(context, manager,
+                          manager.getAppWidgetIds(new android.content.ComponentName(
+                              context, ScheduleWidget.class)));
+                  }
               }
-              SpannableStringBuilder sb = new SpannableStringBuilder();
-              if (all.isEmpty()) {
-                sb.append("Уроков пока нет. Добавь их в приложении.");
-              } else {
-                if (cur != null) {
-                  block(sb, "Сейчас: ", ", до " + cur[2], cur, true);
-                } else {
-                  sb.append("Сейчас: нет урока");
-                  sb.setSpan(new StyleSpan(Typeface.BOLD), 0, 7, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                }
-                if (nxt != null) {
-                  String w = nd == 0 ? ", в " + nxt[1] : nd == 1 ? ", завтра в " + nxt[1] : ", " + SH[Integer.parseInt(nxt[0])] + " в " + nxt[1];
-                  block(sb, "Дальше: ", w, nxt, false);
-                }
-              }
-              PendingIntent pi = PendingIntent.getActivity(c, 0, new Intent(c, MainActivity.class), PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-              for (int id : ids) {
-                RemoteViews v = new RemoteViews(c.getPackageName(), R.layout.widget);
-                v.setTextViewText(R.id.h, DAYS[d]);
-                v.setTextViewText(R.id.b, sb);
-                v.setOnClickPendingIntent(R.id.root, pi);
-                m.updateAppWidget(id, v);
-              }
-              if (ids.length > 0) again(c, all, d, now, ids);
-            }
-            // следующее обновление: ближайшее начало или конец урока (иначе полночь)
-            static void again(Context c, List<String[]> all, int d, String now, int[] ids) {
-              String best = null;
-              for (String[] p : all) {
-                if (!p[0].equals(String.valueOf(d))) continue;
-                for (String tm : new String[]{p[1], p[2]})
-                  if (tm.compareTo(now) > 0 && (best == null || tm.compareTo(best) < 0)) best = tm;
-              }
-              Calendar at = Calendar.getInstance();
-              if (best != null) {
-                at.set(Calendar.HOUR_OF_DAY, Integer.parseInt(best.substring(0, 2)));
-                at.set(Calendar.MINUTE, Integer.parseInt(best.substring(3, 5)));
-              } else {
-                at.add(Calendar.DAY_OF_YEAR, 1);
-                at.set(Calendar.HOUR_OF_DAY, 0);
-                at.set(Calendar.MINUTE, 1);
-              }
-              at.set(Calendar.SECOND, 5);
-              Intent i = new Intent(c, Widget.class).setAction(AppWidgetManager.ACTION_APPWIDGET_UPDATE).putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids);
-              PendingIntent pi = PendingIntent.getBroadcast(c, 1, i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-              ((AlarmManager) c.getSystemService(Context.ALARM_SERVICE)).set(AlarmManager.RTC, at.getTimeInMillis(), pi);
-            }
-            @Override
-            public void onDisabled(Context c) {
-              Intent i = new Intent(c, Widget.class).setAction(AppWidgetManager.ACTION_APPWIDGET_UPDATE);
-              ((AlarmManager) c.getSystemService(Context.ALARM_SERVICE)).cancel(PendingIntent.getBroadcast(c, 1, i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
-            }
           }
           EOF
-          cat > app/src/main/java/ru/lessons/MainActivity.java <<'EOF'
-          package ru.lessons;
+
+          cat > app/src/main/java/com/school/schedule/MainActivity.java <<'EOF'
+          package com.school.schedule;
+
           import android.app.Activity;
-          import android.app.AlertDialog;
           import android.os.Bundle;
-          import android.text.InputType;
-          import android.widget.Button;
-          import android.widget.EditText;
+          import android.graphics.Color;
+          import android.view.Gravity;
           import android.widget.LinearLayout;
-          import android.widget.ScrollView;
           import android.widget.TextView;
-          import android.widget.Toast;
-          import java.util.Arrays;
-          import java.util.List;
-          import java.util.Locale;
-          import java.util.regex.Matcher;
-          import java.util.regex.Pattern;
+          import android.appwidget.AppWidgetManager;
+          import android.content.ComponentName;
+
           public class MainActivity extends Activity {
-            int sel;
-            LinearLayout list, tabs;
-            @Override
-            protected void onCreate(Bundle b) {
-              super.onCreate(b);
-              sel = Widget.today();
-              int pd = (int) (16 * getResources().getDisplayMetrics().density);
-              LinearLayout root = new LinearLayout(this);
-              root.setOrientation(LinearLayout.VERTICAL);
-              root.setPadding(pd, pd, pd, pd);
-              TextView h = new TextView(this);
-              h.setText("Расписание");
-              h.setTextSize(28);
-              h.setPadding(0, 0, 0, pd);
-              root.addView(h);
-              tabs = new LinearLayout(this);
-              root.addView(tabs);
-              ScrollView sv = new ScrollView(this);
-              list = new LinearLayout(this);
-              list.setOrientation(LinearLayout.VERTICAL);
-              sv.addView(list);
-              root.addView(sv, new LinearLayout.LayoutParams(-1, 0, 1f));
-              Button add = new Button(this);
-              add.setText("+ Добавить урок");
-              add.setOnClickListener(v -> edit(null));
-              root.addView(add);
-              setContentView(root);
-              draw();
-            }
-            void draw() {
-              String[] sh = {"Пн","Вт","Ср","Чт","Пт","Сб","Вс"};
-              tabs.removeAllViews();
-              for (int i = 0; i < 7; i++) {
-                final int d = i;
-                Button t = new Button(this);
-                t.setText(sh[i]);
-                t.setAllCaps(false);
-                t.setTextSize(13);
-                t.setMinWidth(0);
-                t.setMinimumWidth(0);
-                t.setPadding(0, 0, 0, 0);
-                t.setTextColor(0xFF14213D);
-                t.setBackgroundColor(i == sel ? 0xFFFFD43B : 0xFFE9EDF2);
-                t.setOnClickListener(v -> { sel = d; draw(); });
-                tabs.addView(t, new LinearLayout.LayoutParams(0, -2, 1f));
+              @Override
+              public void onCreate(Bundle b) {
+                  super.onCreate(b);
+                  getWindow().setStatusBarColor(Color.BLACK);
+                  getWindow().setNavigationBarColor(Color.BLACK);
+
+                  LinearLayout root = new LinearLayout(this);
+                  root.setOrientation(LinearLayout.VERTICAL);
+                  root.setPadding(24, 32, 24, 24);
+                  root.setBackgroundColor(Color.rgb(8,8,8));
+
+                  TextView title = new TextView(this);
+                  title.setText("МОЁ РАСПИСАНИЕ");
+                  title.setTextColor(Color.WHITE);
+                  title.setTextSize(24);
+                  title.setGravity(Gravity.CENTER);
+                  root.addView(title);
+
+                  TextView info = new TextView(this);
+                  info.setText(ScheduleData.status());
+                  info.setTextColor(Color.WHITE);
+                  info.setTextSize(18);
+                  info.setPadding(0, 28, 0, 24);
+                  root.addView(info);
+
+                  int d = ScheduleData.today();
+                  if (d >= 0 && d < 5) {
+                      TextView list = new TextView(this);
+                      StringBuilder s = new StringBuilder();
+                      s.append(ScheduleData.NAMES[d]).append("\\n\\n");
+                      String[] subjects = ScheduleData.DAYS[d];
+                      for (int i=0; i<subjects.length; i++) {
+                          s.append(i+1).append(". ").append(subjects[i])
+                           .append("  ")
+                           .append(ScheduleData.time(ScheduleData.START[i]))
+                           .append("–")
+                           .append(ScheduleData.time(ScheduleData.END[i]))
+                           .append("\\n");
+                      }
+                      list.setText(s.toString());
+                      list.setTextColor(Color.LTGRAY);
+                      list.setTextSize(16);
+                      root.addView(list);
+                  }
+
+                  setContentView(root);
               }
-              list.removeAllViews();
-              int n = 0;
-              for (String[] p : Widget.load(this)) {
-                if (!p[0].equals(String.valueOf(sel))) continue;
-                n++;
-                TextView t = new TextView(this);
-                t.setText(p[1] + " – " + p[2] + "\n" + p[3] + (p[4].isEmpty() ? "" : "  (каб. " + p[4] + ")") + (p[5].isEmpty() ? "" : "\nЗадали: " + p[5]));
-                t.setTextSize(18);
-                t.setPadding(0, 24, 0, 24);
-                t.setOnClickListener(v -> edit(p));
-                list.addView(t);
+
+              @Override
+              protected void onResume() {
+                  super.onResume();
+                  sendBroadcast(new android.content.Intent(this, ScheduleWidget.class)
+                      .setAction(AppWidgetManager.ACTION_APPWIDGET_UPDATE));
               }
-              if (n == 0) {
-                TextView e = new TextView(this);
-                e.setText(Widget.DAYS[sel] + ": уроков нет");
-                e.setPadding(0, 40, 0, 0);
-                list.addView(e);
-              }
-            }
-            EditText field(LinearLayout p, String hint, String v, int type) {
-              EditText t = new EditText(this);
-              
-              t.setInputType(type);
-              t.setHint(hint);
-              t.setText(v);
-              p.addView(t);
-              return t;
-            }
-            static String fix(String s) {
-              Matcher m = Pattern.compile("^\\s*(\\d{1,2})[:.](\\d{2})\\s*$").matcher(s);
-              if (!m.matches()) return null;
-              int h = Integer.parseInt(m.group(1)), mi = Integer.parseInt(m.group(2));
-              return (h > 23 || mi > 59) ? null : String.format(Locale.US, "%02d:%02d", h, mi);
-            }
-            static String clean(String s) { return s.trim().replace("|", " ").replace("\n", " "); }
-            void edit(String[] x) {
-              LinearLayout f = new LinearLayout(this);
-              f.setOrientation(LinearLayout.VERTICAL);
-              f.setPadding(48, 16, 48, 0);
-              EditText n = field(f, "Предмет", x == null ? "" : x[3], InputType.TYPE_CLASS_TEXT);
-              EditText s = field(f, "Начало, например 08:30", x == null ? "08:30" : x[1], InputType.TYPE_CLASS_DATETIME);
-              EditText e = field(f, "Конец, например 09:15", x == null ? "09:15" : x[2], InputType.TYPE_CLASS_DATETIME);
-              EditText r = field(f, "Кабинет", x == null ? "" : x[4], InputType.TYPE_CLASS_TEXT);
-              EditText hw = field(f, "Что задали (необязательно)", x == null ? "" : x[5], InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
-              ScrollView sc = new ScrollView(this);
-              sc.addView(f);
-              AlertDialog.Builder a = new AlertDialog.Builder(this).setTitle(x == null ? "Новый урок" : "Изменить урок").setView(sc);
-              a.setPositiveButton("Сохранить", (dlg, w) -> {
-                String name = clean(n.getText().toString());
-                String st = fix(s.getText().toString());
-                String en = fix(e.getText().toString());
-                if (name.isEmpty() || st == null || en == null) {
-                  Toast.makeText(this, "Проверьте название и время (например 08:30)", Toast.LENGTH_LONG).show();
-                  return;
-                }
-                List<String[]> l = Widget.load(this);
-                if (x != null) l.removeIf(q -> Arrays.equals(q, x));
-                l.add(new String[]{x == null ? String.valueOf(sel) : x[0], st, en, name, clean(r.getText().toString()), clean(hw.getText().toString())});
-                Widget.save(this, l);
-                draw();
-              });
-              if (x != null) a.setNeutralButton("Удалить", (dlg, w) -> {
-                List<String[]> l = Widget.load(this);
-                l.removeIf(q -> Arrays.equals(q, x));
-                Widget.save(this, l);
-                draw();
-              });
-              a.setNegativeButton("Отмена", null);
-              a.show();
-            }
           }
           EOF
-      - name: Build
-        run: gradle assembleDebug --no-daemon
-      - name: Publish APK
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: gh release create "v${{ github.run_number }}" app/build/outputs/apk/debug/app-debug.apk --title "Расписание v${{ github.run_number }}" --notes "Скачай app-debug.apk и установи"
+
+      - name: Build APK
+        run: gradle assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Black-Schedule-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
